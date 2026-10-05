@@ -1,0 +1,39 @@
+# Binaries for programs and plugins
+/bin/
+/bin/*
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Output of the go coverage tool
+*.coverprofile
+
+# Dependency directories (remove the comment below if you use Go modules)
+vendor/
+
+# Logs and debug
+*.log
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Go build cache
+/tmp/
+build/
+
+# Module cache
+.gocache/
+.gopath/
+
+# Binary output directory from Makefile
+bin/
