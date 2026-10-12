@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"robotomize/go-lisp/internal/lexer"
+	"robotomize/go-lisp/internal/parser"
+	"robotomize/go-lisp/internal/types"
 )
 
 func init() {
@@ -38,6 +40,8 @@ func main() {
 
 	scanner := bufio.NewScanner(input)
 
+	var collectedTokens []lexer.Token
+
 	for {
 		if isInteractive {
 			fmt.Print("go-lisp>>")
@@ -55,8 +59,26 @@ func main() {
 				break
 			}
 
-			fmt.Println(token)
+			collectedTokens = append(collectedTokens, token)
 		}
+	}
+
+	p := parser.New(collectedTokens)
+	first := true
+	for !p.IsEOF() {
+		val, err := p.Parse()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		if val == nil {
+			break
+		}
+		if !first {
+			fmt.Println()
+		}
+		first = false
+		fmt.Println(types.Pretty(val))
 	}
 
 	if err := scanner.Err(); err != nil {
