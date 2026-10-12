@@ -1,31 +1,34 @@
 package types
 
-type Typ int8
-
-const (
-	TypNil Typ = iota
-	TypCons
-	TypSymbol
-	TypNumber
-)
+type Value interface {
+	String() string
+}
 
 func IsNil(t Value) bool {
-	return t.Type() == TypNil
+	_, ok := t.(NilTyp)
+	return ok
 }
 
 func IsCons(t Value) bool {
-	return t.Type() == TypCons
+	_, ok := t.(*Cons)
+	return ok
 }
 
 func IsSymbol(t Value) bool {
-	return t.Type() == TypSymbol
+	_, ok := t.(*Symbol)
+	return ok
 }
 
 func IsNumber(t Value) bool {
-	return t.Type() == TypNumber
+	_, ok := t.(*Number)
+	return ok
 }
 
-type Value interface {
-	String() string
-	Type() Typ
+func List(elems ...Value) Value {
+	var result Value = Nil
+	for i := len(elems) - 1; i >= 0; i-- {
+		result = NewCons(elems[i], result)
+	}
+
+	return result
 }

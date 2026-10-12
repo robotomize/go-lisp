@@ -1,62 +1,51 @@
+//go:build !cons_lambda
+
 package types
 
 import "strings"
 
 var _ Value = (*Cons)(nil)
 
-type Cons struct {
-	Car Value
-	Cdr Value
-}
-
 func NewCons(car, cdr Value) *Cons {
-	return &Cons{Car: car, Cdr: cdr}
+	return &Cons{car: car, cdr: cdr}
 }
 
-func List(elems ...Value) Value {
-	if len(elems) == 0 {
-		return Nil
-	}
-
-	head := &Cons{Car: elems[0], Cdr: Nil}
-	tail := head
-	for _, elem := range elems[1:] {
-		next := &Cons{Car: elem, Cdr: Nil}
-		tail.Cdr = next
-		tail = next
-	}
-
-	return head
+type Cons struct {
+	car Value
+	cdr Value
 }
 
-func (c *Cons) Type() Typ {
-	return TypCons
+func (c *Cons) Car() Value {
+	return c.car
 }
 
-func (t *Cons) String() string {
+func (c *Cons) Cdr() Value {
+	return c.cdr
+}
+
+func (c *Cons) String() string {
 	var b strings.Builder
 	b.WriteByte('(')
-	writeValue(&b, t.Car)
+	writeValue(&b, c.Car())
 
-	cdr := t.Cdr
+	cdr := c.Cdr()
 	for {
-		if _, ok := cdr.(empty); ok {
+		if IsNil(cdr) {
 			b.WriteByte(')')
 			return b.String()
 		}
 
-		if !IsCons(cdr) {
+		next, ok := cdr.(*Cons)
+		if !ok {
 			b.WriteByte(' ')
 			writeValue(&b, cdr)
 			b.WriteByte(')')
 			return b.String()
 		}
 
-		next := cdr.(*Cons)
-
 		b.WriteByte(' ')
-		writeValue(&b, next.Car)
-		cdr = next.Cdr
+		writeValue(&b, next.Car())
+		cdr = next.Cdr()
 	}
 }
 
@@ -65,5 +54,6 @@ func writeValue(b *strings.Builder, v Value) {
 		b.WriteString("<nil>")
 		return
 	}
+
 	b.WriteString(v.String())
 }

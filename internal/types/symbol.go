@@ -20,10 +20,6 @@ func (s Symbol) Name() string {
 	return s.handle.Value()
 }
 
-func (s Symbol) Type() Typ {
-	return TypSymbol
-}
-
 func (s Symbol) String() string {
 	return s.handle.Value()
 }

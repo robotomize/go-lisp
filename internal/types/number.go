@@ -12,10 +12,6 @@ type Number struct {
 	value int64
 }
 
-func (n Number) Type() Typ {
-	return TypNumber
-}
-
 func (n Number) String() string {
 	return fmt.Sprintf("%d", n.value)
 }

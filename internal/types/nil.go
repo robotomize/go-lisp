@@ -1,15 +1,11 @@
 package types
 
-var _ Value = empty{}
+var _ Value = NilTyp{}
 
-var Nil = empty{}
+var Nil = NilTyp{}
 
-type empty struct{}
+type NilTyp struct{}
 
-func (n empty) Type() Typ {
-	return TypNil
-}
-
-func (n empty) String() string {
+func (n NilTyp) String() string {
 	return "()"
 }
