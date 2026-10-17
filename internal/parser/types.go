@@ -30,6 +30,7 @@ const (
 	SfCar
 	SfCdr
 	SfIf
+	SfCond
 	SfPrint
 	SfRead
 	SfSymbol
@@ -56,6 +57,7 @@ var ValuesToString = map[any]string{
 	SfCar:    "car",
 	SfCdr:    "cdr",
 	SfIf:     "if",
+	SfCond:   "cond",
 	SfPrint:  "print",
 	SfRead:   "read",
 	SfSymbol: "symbol",
@@ -82,6 +84,7 @@ var StringToValues = map[string]any{
 	"car":    SfCar,
 	"cdr":    SfCdr,
 	"if":     SfIf,
+	"cond":   SfCond,
 	"print":  SfPrint,
 	"read":   SfRead,
 	"symbol": SfSymbol,

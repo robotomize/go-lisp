@@ -3,11 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
+
+	"robotomize/go-lisp/internal/evaluator"
 	"robotomize/go-lisp/internal/lexer"
 	"robotomize/go-lisp/internal/parser"
-	"robotomize/go-lisp/internal/types"
 )
 
 func init() {
@@ -17,7 +17,7 @@ func init() {
 func main() {
 	argv := os.Args[1:]
 
-	var input io.Reader
+	input := os.Stdin
 	isInteractive := true
 
 	if len(argv) > 0 {
@@ -39,11 +39,11 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(input)
-
-	var collectedTokens []lexer.Token
+	eval := evaluator.New()
+	var collected []lexer.Token
 
 	for {
-		if isInteractive {
+		if isInteractive && len(collected) == 0 {
 			fmt.Print("go-lisp>>")
 		}
 
@@ -51,38 +51,71 @@ func main() {
 			break
 		}
 
-		line := scanner.Text()
-		l := lexer.New(line)
+		l := lexer.New(scanner.Text())
 		for {
 			token, ok := l.Next()
 			if !ok {
 				break
 			}
-
-			collectedTokens = append(collectedTokens, token)
+			collected = append(collected, token)
 		}
-	}
 
-	p := parser.New(collectedTokens)
-	first := true
-	for !p.IsEOF() {
-		val, err := p.Parse()
-		if err != nil {
+		if !balanced(collected) {
+			continue
+		}
+
+		if err := evalForms(eval, collected); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
-		if val == nil {
-			break
-		}
-		if !first {
-			fmt.Println()
-		}
-		first = false
-		fmt.Println(types.Pretty(val))
+		collected = nil
+	}
+
+	if len(collected) > 0 {
+		fmt.Fprintln(os.Stderr, "error: expected closing parenthesis ')'")
+		os.Exit(1)
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func evalForms(eval evaluator.Evaluator, tokens []lexer.Token) error {
+	p := parser.New(tokens)
+	for !p.IsEOF() {
+		form, err := p.Parse()
+		if err != nil {
+			return err
+		}
+
+		if form == nil {
+			return nil
+		}
+
+		value, err := eval.Eval(form)
+		if err != nil {
+			return err
+		}
+		fmt.Println(value)
+	}
+	return nil
+}
+
+// @TODO make this more robust() =()
+func balanced(tokens []lexer.Token) bool {
+	depth := 0
+	for _, token := range tokens {
+		switch token.Typ {
+		case lexer.TokenTypOpen:
+			depth++
+		case lexer.TokenTypClose:
+			depth--
+			if depth < 0 {
+				return true
+			}
+		}
+	}
+	return depth == 0
 }
