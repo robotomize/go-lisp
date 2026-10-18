@@ -26,3 +26,21 @@ func TestNextList(t *testing.T) {
 		t.Fatal("lexer produced a token after the input ended")
 	}
 }
+
+func TestQuoteToken(t *testing.T) {
+	l := New("'x")
+	want := []Token{
+		{Typ: TokenTypQuote, Value: "'"},
+		{Typ: TokenTypSymbol, Value: "x"},
+	}
+
+	for i, expected := range want {
+		got, ok := l.Next()
+		if !ok {
+			t.Fatalf("token %d: lexer stopped early", i)
+		}
+		if got != expected {
+			t.Fatalf("token %d: got %#v, want %#v", i, got, expected)
+		}
+	}
+}

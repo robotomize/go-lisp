@@ -2,7 +2,24 @@ package types
 
 type Value interface {
 	String() string
+	Type() Typ
 }
+
+type Typ string
+
+func (s Typ) String() string {
+	return string(s)
+}
+
+const (
+	TypeNil    Typ = "nil"
+	TypeCons   Typ = "cons"
+	TypeSymbol Typ = "symbol"
+	TypeInt    Typ = "int"
+	TypeBool   Typ = "bool"
+	TypeFloat  Typ = "float"
+	TypeString Typ = "string"
+)
 
 func IsNil(t Value) bool {
 	_, ok := t.(NilTyp)
@@ -20,7 +37,12 @@ func IsSymbol(t Value) bool {
 }
 
 func IsNumber(t Value) bool {
-	_, ok := t.(*Number)
+	_, ok := t.(*Int)
+	return ok
+}
+
+func IsBool(t Value) bool {
+	_, ok := t.(*Bool)
 	return ok
 }
 

@@ -16,6 +16,8 @@ func (t TokenType) String() string {
 		return "n"
 	case TokenTypeString:
 		return "str"
+	case TokenTypQuote:
+		return "'"
 	default:
 		return "unknown"
 	}
@@ -27,6 +29,7 @@ const (
 	TokenTypSymbol
 	TokenTypNumber
 	TokenTypeString
+	TokenTypQuote
 )
 
 type Token struct {

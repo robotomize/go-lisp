@@ -23,3 +23,7 @@ func (s Symbol) Name() string {
 func (s Symbol) String() string {
 	return s.handle.Value()
 }
+
+func (s *Symbol) Type() Typ {
+	return TypeSymbol
+}

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	"robotomize/go-lisp/internal/ast"
 	"robotomize/go-lisp/internal/evaluator"
 	"robotomize/go-lisp/internal/lexer"
-	"robotomize/go-lisp/internal/parser"
 )
 
 func init() {
@@ -39,7 +39,7 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(input)
-	eval := evaluator.New()
+	eval := evaluator.New(evaluator.NewCalculator())
 	var collected []lexer.Token
 
 	for {
@@ -83,7 +83,7 @@ func main() {
 }
 
 func evalForms(eval evaluator.Evaluator, tokens []lexer.Token) error {
-	p := parser.New(tokens)
+	p := ast.New(tokens)
 	for !p.IsEOF() {
 		form, err := p.Parse()
 		if err != nil {

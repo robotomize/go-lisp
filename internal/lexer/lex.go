@@ -41,6 +41,9 @@ func (l *Lexer) Next() (Token, bool) {
 		case ')':
 			l.ptr++
 			return Token{Typ: TokenTypClose, Value: ")"}, true
+		case '\'':
+			l.ptr++
+			return Token{Typ: TokenTypQuote, Value: "'"}, true
 		}
 
 		// process string value @TODO need move to separate func
@@ -66,7 +69,7 @@ func (l *Lexer) Next() (Token, bool) {
 		var output []rune
 		for !l.IsEOF() {
 			curr = l.Curr()
-			if unicode.IsSpace(curr) || curr == '"' || curr == '(' || curr == ')' || curr == ';' {
+			if unicode.IsSpace(curr) || curr == '"' || curr == '(' || curr == ')' || curr == ';' || curr == '\'' {
 				break
 			}
 			output = append(output, curr)

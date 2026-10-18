@@ -15,3 +15,11 @@ type String struct {
 func (s String) String() string {
 	return strconv.Quote(s.value)
 }
+
+func (s *String) V() string {
+	return s.value
+}
+
+func (s *String) Type() Typ {
+	return TypeString
+}

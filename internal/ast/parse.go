@@ -1,8 +1,10 @@
-package parser
+package ast
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
+	"strings"
 
 	"robotomize/go-lisp/internal/lexer"
 	"robotomize/go-lisp/internal/types"
@@ -30,25 +32,36 @@ func (p *Parser) Parse() (types.Value, error) {
 
 	switch tok.Typ {
 	case lexer.TokenTypNumber:
-		val, err := strconv.ParseInt(tok.Value, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("not a number=): %s", tok.Value)
-		}
-		return types.NewNumber(val), nil
+		return ParseNumeric(tok.Value)
 
 	case lexer.TokenTypeString:
 		return types.NewString(tok.Value), nil
 
 	case lexer.TokenTypSymbol:
+		if boolean, ok := ParseBool(tok.Value); ok {
+			return boolean, nil
+		}
 		return types.NewSymbol(tok.Value), nil
+
+	case lexer.TokenTypQuote:
+		elem, err := p.Parse()
+		if err != nil {
+			return nil, fmt.Errorf("Parse(): %w", err)
+		}
+		if elem == nil {
+			return nil, fmt.Errorf("expected expression after quote")
+		}
+
+		return types.List(types.NewSymbol("quote"), elem), nil
 
 	case lexer.TokenTypOpen:
 		var elems []types.Value
 		for !p.IsEOF() && p.Curr().Typ != lexer.TokenTypClose {
 			elem, err := p.Parse()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("Parse(): %w", err)
 			}
+
 			elems = append(elems, elem)
 		}
 
@@ -79,4 +92,40 @@ func (p *Parser) Curr() lexer.Token {
 	}
 
 	return p.tokens[p.ptr]
+}
+
+func ParseNumeric(s string) (types.Numeric, error) {
+	parts := strings.Split(s, ".")
+	if len(parts) > 2 {
+		return nil, fmt.Errorf("invalid number: %s", s)
+	}
+
+	if len(parts) == 1 {
+		if _, err := strconv.ParseInt(s, 10, 64); err != nil {
+			return nil, fmt.Errorf("%s is not a number", s)
+		}
+
+		v := new(big.Int)
+		v.SetString(s, 10)
+		return types.NewIntFrom(v), nil
+	}
+
+	if _, err := strconv.ParseFloat(s, 64); err != nil {
+		return nil, fmt.Errorf("%s is not a number", s)
+	}
+
+	v := new(big.Float)
+	v.SetString(s)
+	return types.NewFloatFrom(v), nil
+}
+
+func ParseBool(s string) (*types.Bool, bool) {
+	switch strings.ToLower(s) {
+	case "#t", "#true", "true":
+		return types.True, true
+	case "#f", "#false", "false":
+		return types.False, true
+	default:
+		return nil, false
+	}
 }

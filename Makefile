@@ -1,4 +1,4 @@
-APP_NAME := go-lisp-cli
+APP_NAME := glisp
 CMD := ./cmd/go-lisp-cli
 BIN_DIR := bin
 
@@ -6,6 +6,7 @@ export GOBIN := $(PWD)/$(BIN_DIR)
 export PATH := $(GOBIN):$(PATH)
 
 LDFLAGS := -s -w
+GIT_SHA := $(shell git rev-parse --short HEAD)
 
 GOWRAP_VERSION := 1.4.0
 GOLANG_CI_LINT_VERSION ?= v2.12.2
@@ -34,14 +35,11 @@ endif
 .PHONY: all
 all: test build
 
-./bin:
-	mkdir -p ./bin
-
-./bin/gomock: | ./bin
+./bin/gomock: | $(BIN_DIR)
 	go install go.uber.org/mock/mockgen@latest
 
 .PHONY: ./bin/golangci-lint
-./bin/golangci-lint: | ./bin
+./bin/golangci-lint: | $(BIN_DIR)
 	GOTOOLCHAIN=go$(GO_VERSION) GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
 
 .PHONY: lint
@@ -56,11 +54,13 @@ fix-lint: ./bin/golangci-lint
 test:
 	GOGC=off go test -short ./..
 
-.PHONY: build-cli
+.PHONY: build build-cli
 build: build-cli
 
-.PHONY: build-cli
 build-cli: | $(BIN_DIR)
+	@echo "Building: $(APP_NAME) $(GIT_SHA)"
+	@echo "OS $(OSFLAG)"
+	@echo "ARCH $(UNAME_P)"
 	go build -trimpath \
 		-ldflags "$(LDFLAGS)" \
 		-o $(BIN_DIR)/$(APP_NAME) \

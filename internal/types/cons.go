@@ -23,6 +23,10 @@ func (c *Cons) Cdr() Value {
 	return c.cdr
 }
 
+func (c *Cons) Type() Typ {
+	return TypeCons
+}
+
 func (c *Cons) String() string {
 	var b strings.Builder
 	b.WriteByte('(')
