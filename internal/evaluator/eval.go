@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"robotomize/go-lisp/internal/ast"
+	"robotomize/go-lisp/internal/evaluator/environment"
 	"robotomize/go-lisp/internal/types"
 )
 
@@ -17,21 +18,25 @@ type Evaluator interface {
 
 var _ Evaluator = (*evalImpl)(nil)
 
-func New(calculator Calculator) Evaluator {
-	return NewWithIO(calculator, os.Stdin, os.Stdout)
+func New(calculator Calculator, env environment.Context, newEnv environment.New) Evaluator {
+	return NewWithIO(calculator, env, newEnv, os.Stdin, os.Stdout)
 }
 
-func NewWithIO(calculator Calculator, in io.Reader, out io.Writer) Evaluator {
+func NewWithIO(calculator Calculator, env environment.Context, newEnv environment.New, in io.Reader, out io.Writer) Evaluator {
 	if in == nil {
 		in = os.Stdin
 	}
+
 	if out == nil {
 		out = os.Stdout
 	}
 
+	installPrimitives(env)
+
 	return &evalImpl{
 		calculator: calculator,
-		env:        newEnv(nil),
+		env:        env,
+		newEnv:     newEnv,
 		in:         bufio.NewReader(in),
 		out:        out,
 	}
@@ -39,7 +44,8 @@ func NewWithIO(calculator Calculator, in io.Reader, out io.Writer) Evaluator {
 
 type evalImpl struct {
 	calculator Calculator
-	env        *env
+	env        environment.Context
+	newEnv     environment.New
 	in         *bufio.Reader
 	out        io.Writer
 }
@@ -49,7 +55,7 @@ func (e *evalImpl) Eval(val Value) (Value, error) {
 	case *types.Int, *types.Float, *types.String, *types.Bool, types.NilTyp:
 		return v, nil
 	case *types.Symbol:
-		value, ok := e.env.lookup(v.Name())
+		value, ok := e.env.Lookup(v.Name())
 		if !ok {
 			return nil, fmt.Errorf("unbound symbol: %s", v.Name())
 		}
@@ -76,6 +82,8 @@ func (e *evalImpl) evalCons(cell *types.Cons) (Value, error) {
 	switch op {
 	case ast.SfIf:
 		return e.evalIf(args)
+	case ast.SfCond:
+		return e.evalCond(args)
 	case ast.SfQuote:
 		return oneArg(args)
 	case ast.SfPrint:
@@ -88,10 +96,20 @@ func (e *evalImpl) evalCons(cell *types.Cons) (Value, error) {
 		return e.evalTypeof(args)
 	case ast.SfDo:
 		return e.evalDo(args)
-	case ast.SfBegin:
-		return e.evalSeq(args)
 	case ast.SfDefine:
 		return e.evalDefine(args)
+	case ast.SfSet:
+		return e.evalSet(args)
+	case ast.SfEval:
+		return e.evalEval(args)
+	case ast.SfLambda:
+		return e.evalLambda(args)
+	case ast.SfDambda:
+		return e.evalDambda(args)
+	case ast.SfLet:
+		return e.evalLet(args)
+	case ast.SfDefineMacro:
+		return e.evalDefineMacro(args)
 	case ast.OpAdd, ast.OpSub, ast.OpMul, ast.OpDiv, ast.OpMod, ast.OpInc, ast.OpDec,
 		ast.PrEq, ast.PrGt, ast.PrLt, ast.PrGte, ast.PrLte:
 		nums, err := e.numbers(args)
@@ -142,30 +160,64 @@ func (e *evalImpl) evalDefine(args Value) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		e.env.define(name.Name(), value)
+		e.env.Define(name.Name(), value)
 		return name, nil
 	case *types.Cons:
 		symbol, ok := name.Car().(*types.Symbol)
 		if !ok {
 			return nil, fmt.Errorf("define name must be a symbol")
 		}
+
 		params, err := paramNames(name.Cdr())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("expected parameters: %w", err)
 		}
+
 		body := make([]types.Value, len(items)-1)
+
 		for i, expr := range items[1:] {
 			body[i] = expr
 		}
-		e.env.define(symbol.Name(), &procedure{
-			params: params,
-			body:   types.List(body...),
-			env:    e.env,
-		})
+
+		e.env.Define(symbol.Name(), types.NewLambda(params, types.List(body...), e.env))
 		return symbol, nil
 	default:
 		return nil, fmt.Errorf("define name must be a symbol")
 	}
+}
+
+func (e *evalImpl) evalEval(args Value) (Value, error) {
+	value, err := e.evalOne(args)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.Eval(value)
+}
+
+func (e *evalImpl) evalSet(args Value) (Value, error) {
+	items, err := operands(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) != 2 {
+		return nil, fmt.Errorf("expected 2 arguments")
+	}
+
+	symbol, ok := items[0].(*types.Symbol)
+	if !ok {
+		return nil, fmt.Errorf("set! name must be a symbol")
+	}
+
+	value, err := e.Eval(items[1])
+	if err != nil {
+		return nil, err
+	}
+	if !e.env.Mutate(symbol.Name(), value) {
+		return nil, fmt.Errorf("unbound symbol: %s", symbol.Name())
+	}
+
+	return symbol, nil
 }
 
 func paramNames(args Value) ([]string, error) {
@@ -181,14 +233,61 @@ func paramNames(args Value) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("parameter must be a symbol")
 		}
+
 		if seen[symbol.Name()] {
 			return nil, fmt.Errorf("duplicate parameter: %s", symbol.Name())
 		}
+
 		seen[symbol.Name()] = true
 		names[i] = symbol.Name()
 	}
 
 	return names, nil
+}
+
+func (e *evalImpl) evalLambda(args Value) (Value, error) {
+	params, body, err := e.fnParts(args)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewLambda(params, body, e.env), nil
+}
+
+func (e *evalImpl) evalDambda(args Value) (Value, error) {
+	params, body, err := e.fnParts(args)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewDambda(params, body), nil
+}
+
+func (e *evalImpl) fnParts(args Value) ([]string, Value, error) {
+	items, err := operands(args)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(items) < 2 {
+		return nil, nil, fmt.Errorf("expected a parameter list and a body")
+	}
+
+	if !types.IsNil(items[0]) && !types.IsCons(items[0]) {
+		return nil, nil, fmt.Errorf("expected a parameter list")
+	}
+
+	params, err := paramNames(items[0])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	body := make([]types.Value, len(items)-1)
+	for i, expr := range items[1:] {
+		body[i] = expr
+	}
+
+	return params, types.List(body...), nil
 }
 
 func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
@@ -197,9 +296,8 @@ func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
 		return nil, err
 	}
 
-	proc, ok := operator.(*procedure)
-	if !ok {
-		return nil, fmt.Errorf("operator must be a procedure")
+	if macro, ok := operator.(*types.Macro); ok {
+		return e.applyMacro(macro, cell.Cdr())
 	}
 
 	args, err := e.evalOperands(cell.Cdr())
@@ -207,23 +305,203 @@ func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
 		return nil, err
 	}
 
-	if len(args) != len(proc.params) {
-		if len(proc.params) == 1 {
-			return nil, fmt.Errorf("expected 1 argument")
-		}
-		return nil, fmt.Errorf("expected %d arguments", len(proc.params))
+	switch fn := operator.(type) {
+	case *types.Lambda:
+		env, _ := fn.Env().(environment.Context)
+		return e.apply(fn.Params(), fn.Body(), env, args)
+	case *types.Dambda:
+		return e.apply(fn.Params(), fn.Body(), e.env, args)
+	case *types.Primitive:
+		return fn.Apply(args)
+	default:
+		return nil, fmt.Errorf("operator must be a procedure")
+	}
+}
+
+func (e *evalImpl) applyMacro(macro *types.Macro, args Value) (Value, error) {
+	items, err := operands(args)
+	if err != nil {
+		return nil, err
 	}
 
-	frame := newEnv(proc.env)
-	for i, name := range proc.params {
-		frame.define(name, args[i])
+	env, ok := macro.Env().(environment.Context)
+	if !ok || env == nil {
+		return nil, fmt.Errorf("macro has no environment")
+	}
+
+	params := macro.Params()
+	rest := macro.Rest()
+	if rest == "" && len(items) != len(params) || rest != "" && len(items) < len(params) {
+		if len(params) == 1 && rest == "" {
+			return nil, fmt.Errorf("expected 1 argument")
+		}
+		if rest == "" {
+			return nil, fmt.Errorf("expected %d arguments", len(params))
+		}
+		return nil, fmt.Errorf("expected at least %d arguments", len(params))
+	}
+
+	frame := e.newEnv(env)
+	for i, name := range params {
+		frame.Define(name, items[i])
+	}
+	if rest != "" {
+		frame.Define(rest, types.List(items[len(params):]...))
+	}
+
+	saved := e.env
+	e.env = frame
+	expansion, err := e.evalSeq(macro.Body())
+	e.env = saved
+	if err != nil {
+		return nil, err
+	}
+
+	return e.Eval(expansion)
+}
+
+func (e *evalImpl) evalLet(args Value) (Value, error) {
+	items, err := operands(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) < 2 {
+		return nil, fmt.Errorf("expected bindings and a body")
+	}
+
+	bindings, err := operands(items[0])
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]types.Value, len(bindings))
+	inits := make([]Value, len(bindings))
+	for i, binding := range bindings {
+		parts, err := operands(binding)
+		if err != nil {
+			return nil, err
+		}
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("let binding must be (name value)")
+		}
+		names[i] = parts[0]
+		inits[i] = parts[1]
+	}
+
+	params, err := paramNames(types.List(names...))
+	if err != nil {
+		return nil, err
+	}
+
+	values := make([]Value, len(inits))
+	for i, expr := range inits {
+		values[i], err = e.Eval(expr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return e.apply(params, valueList(items[1:]), e.env, values)
+}
+
+func (e *evalImpl) evalDefineMacro(args Value) (Value, error) {
+	items, err := operands(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) < 2 {
+		return nil, fmt.Errorf("expected a name and a body")
+	}
+
+	name, ok := items[0].(*types.Cons)
+	if !ok {
+		return nil, fmt.Errorf("define-macro name must be a list")
+	}
+
+	symbol, ok := name.Car().(*types.Symbol)
+	if !ok {
+		return nil, fmt.Errorf("define-macro name must be a symbol")
+	}
+
+	params, rest, err := macroParams(name.Cdr())
+	if err != nil {
+		return nil, fmt.Errorf("expected parameters: %w", err)
+	}
+
+	body := make([]types.Value, len(items)-1)
+	for i, expr := range items[1:] {
+		body[i] = expr
+	}
+
+	e.env.Define(symbol.Name(), types.NewMacro(params, rest, types.List(body...), e.env))
+	return symbol, nil
+}
+
+func macroParams(args Value) ([]string, string, error) {
+	var names []string
+	seen := map[string]bool{}
+	for {
+		if types.IsNil(args) {
+			return names, "", nil
+		}
+
+		cell, ok := args.(*types.Cons)
+		if !ok {
+			symbol, ok := args.(*types.Symbol)
+			if !ok {
+				return nil, "", fmt.Errorf("parameter must be a symbol")
+			}
+			if seen[symbol.Name()] {
+				return nil, "", fmt.Errorf("duplicate parameter: %s", symbol.Name())
+			}
+			return names, symbol.Name(), nil
+		}
+
+		symbol, ok := cell.Car().(*types.Symbol)
+		if !ok {
+			return nil, "", fmt.Errorf("parameter must be a symbol")
+		}
+		if symbol.Name() == "." {
+			restCell, ok := cell.Cdr().(*types.Cons)
+			if !ok || !types.IsNil(restCell.Cdr()) {
+				return nil, "", fmt.Errorf("expected a symbol after .")
+			}
+			rest, ok := restCell.Car().(*types.Symbol)
+			if !ok || rest.Name() == "." {
+				return nil, "", fmt.Errorf("expected a symbol after .")
+			}
+			if seen[rest.Name()] {
+				return nil, "", fmt.Errorf("duplicate parameter: %s", rest.Name())
+			}
+			return names, rest.Name(), nil
+		}
+		if seen[symbol.Name()] {
+			return nil, "", fmt.Errorf("duplicate parameter: %s", symbol.Name())
+		}
+		seen[symbol.Name()] = true
+		names = append(names, symbol.Name())
+		args = cell.Cdr()
+	}
+}
+
+func (e *evalImpl) apply(params []string, body Value, parent environment.Context, args []Value) (Value, error) {
+	if len(args) != len(params) {
+		if len(params) == 1 {
+			return nil, fmt.Errorf("expected 1 argument")
+		}
+		return nil, fmt.Errorf("expected %d arguments", len(params))
+	}
+
+	frame := e.newEnv(parent)
+	for i, name := range params {
+		frame.Define(name, args[i])
 	}
 
 	saved := e.env
 	e.env = frame
 	defer func() { e.env = saved }()
 
-	return e.evalSeq(proc.body)
+	return e.evalSeq(body)
 }
 
 func (e *evalImpl) evalOperands(args Value) ([]Value, error) {
@@ -279,9 +557,9 @@ func (e *evalImpl) evalDo(args Value) (Value, error) {
 		}
 	}
 
-	frame := newEnv(e.env)
+	frame := e.newEnv(e.env)
 	for i, binding := range bindings {
-		frame.define(binding.name, values[i])
+		frame.Define(binding.name, values[i])
 	}
 
 	saved := e.env
@@ -293,9 +571,9 @@ func (e *evalImpl) evalDo(args Value) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !isFalse(test) {
+		if isFalse(test) {
 			if len(exit) == 1 {
-				return test, nil
+				return types.Nil, nil
 			}
 			return e.evalSeq(valueList(exit[1:]))
 		}
@@ -309,7 +587,7 @@ func (e *evalImpl) evalDo(args Value) (Value, error) {
 		next := make([]Value, len(bindings))
 		for i, binding := range bindings {
 			if !binding.hasStep {
-				next[i], _ = e.env.lookup(binding.name)
+				next[i], _ = e.env.Lookup(binding.name)
 				continue
 			}
 			next[i], err = e.Eval(binding.step)
@@ -318,7 +596,7 @@ func (e *evalImpl) evalDo(args Value) (Value, error) {
 			}
 		}
 		for i, binding := range bindings {
-			e.env.define(binding.name, next[i])
+			e.env.Define(binding.name, next[i])
 		}
 	}
 }
@@ -368,11 +646,54 @@ func valueList(items []Value) Value {
 	return types.List(body...)
 }
 
+func (e *evalImpl) evalCond(args Value) (Value, error) {
+	clauses, err := operands(args)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, clause := range clauses {
+		parts, err := operands(clause)
+		if err != nil {
+			return nil, err
+		}
+		if len(parts) == 0 {
+			return nil, fmt.Errorf("cond clause must be (test body)")
+		}
+
+		symbol, ok := parts[0].(*types.Symbol)
+		if ok && symbol.Name() == "else" {
+			if i != len(clauses)-1 {
+				return nil, fmt.Errorf("else clause must be last")
+			}
+			if len(parts) == 1 {
+				return nil, fmt.Errorf("else clause must have a body")
+			}
+			return e.evalSeq(valueList(parts[1:]))
+		}
+
+		test, err := e.Eval(parts[0])
+		if err != nil {
+			return nil, err
+		}
+		if isFalse(test) {
+			continue
+		}
+		if len(parts) == 1 {
+			return test, nil
+		}
+		return e.evalSeq(valueList(parts[1:]))
+	}
+
+	return types.Nil, nil
+}
+
 func (e *evalImpl) evalIf(args Value) (Value, error) {
 	items, err := operands(args)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(items) < 2 || len(items) > 3 {
 		return nil, fmt.Errorf("expected 2 or 3 arguments")
 	}
@@ -386,6 +707,7 @@ func (e *evalImpl) evalIf(args Value) (Value, error) {
 		if len(items) == 2 {
 			return types.Nil, nil
 		}
+
 		return e.Eval(items[2])
 	}
 
@@ -404,6 +726,7 @@ func (e *evalImpl) evalPrint(args Value) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		parts = append(parts, value.String())
 	}
 
@@ -449,7 +772,7 @@ func (e *evalImpl) evalTypeof(args Value) (Value, error) {
 		return nil, err
 	}
 
-	return types.NewSymbol(value.Type().String()), nil
+	return types.NewSymbol(value.Type()), nil
 }
 
 func (e *evalImpl) evalOne(args Value) (Value, error) {
@@ -483,6 +806,7 @@ func oneArg(args Value) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(items) != 1 {
 		return nil, fmt.Errorf("expected 1 argument")
 	}
@@ -497,6 +821,7 @@ func operands(args Value) ([]Value, error) {
 		if !ok {
 			return nil, fmt.Errorf("improper list")
 		}
+
 		items = append(items, cell.Car())
 		args = cell.Cdr()
 	}
@@ -526,6 +851,7 @@ func (e *evalImpl) numbers(args Value) ([]types.Numeric, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s is not a number", value)
 		}
+
 		nums = append(nums, number)
 	}
 

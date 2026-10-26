@@ -24,6 +24,6 @@ func (s Symbol) String() string {
 	return s.handle.Value()
 }
 
-func (s *Symbol) Type() Typ {
+func (s *Symbol) Type() string {
 	return TypeSymbol
 }

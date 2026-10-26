@@ -20,6 +20,6 @@ func (s *String) V() string {
 	return s.value
 }
 
-func (s *String) Type() Typ {
+func (s *String) Type() string {
 	return TypeString
 }

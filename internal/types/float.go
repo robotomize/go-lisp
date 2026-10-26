@@ -72,7 +72,7 @@ func FloatOf(n Numeric) *big.Float {
 	}
 }
 
-func (f *Float) Type() Typ {
+func (f *Float) Type() string {
 	return TypeFloat
 }
 

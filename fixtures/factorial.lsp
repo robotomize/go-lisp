@@ -4,5 +4,5 @@
       1
       (* n (factorial (- n 1)))))
 
-(display "factorial 5")
-(factorial 5)
+(display "factorial 35")
+(factorial 10000)

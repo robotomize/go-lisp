@@ -2,23 +2,21 @@ package types
 
 type Value interface {
 	String() string
-	Type() Typ
-}
-
-type Typ string
-
-func (s Typ) String() string {
-	return string(s)
+	Type() string
 }
 
 const (
-	TypeNil    Typ = "nil"
-	TypeCons   Typ = "cons"
-	TypeSymbol Typ = "symbol"
-	TypeInt    Typ = "int"
-	TypeBool   Typ = "bool"
-	TypeFloat  Typ = "float"
-	TypeString Typ = "string"
+	TypeNil       string = "nil"
+	TypeCons      string = "cons"
+	TypeSymbol    string = "symbol"
+	TypeInt       string = "int"
+	TypeBool      string = "bool"
+	TypeFloat     string = "float"
+	TypeString    string = "string"
+	TypeLambda    string = "lambda"
+	TypeDambda    string = "dambda"
+	TypePrimitive string = "primitive"
+	TypeMacro     string = "macro"
 )
 
 func IsNil(t Value) bool {

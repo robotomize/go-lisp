@@ -10,6 +10,6 @@ func (n NilTyp) String() string {
 	return "()"
 }
 
-func (n NilTyp) Type() Typ {
+func (n NilTyp) Type() string {
 	return TypeNil
 }

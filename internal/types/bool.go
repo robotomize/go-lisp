@@ -22,7 +22,7 @@ func (b *Bool) V() bool {
 	return b.val
 }
 
-func (b *Bool) Type() Typ {
+func (b *Bool) Type() string {
 	return TypeBool
 }
 

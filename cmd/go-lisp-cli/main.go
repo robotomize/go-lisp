@@ -7,7 +7,10 @@ import (
 
 	"robotomize/go-lisp/internal/ast"
 	"robotomize/go-lisp/internal/evaluator"
+	"robotomize/go-lisp/internal/evaluator/environment"
+	"robotomize/go-lisp/internal/evaluator/environment/hme"
 	"robotomize/go-lisp/internal/lexer"
+	"robotomize/go-lisp/internal/std"
 )
 
 func init() {
@@ -39,12 +42,18 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(input)
-	eval := evaluator.New(evaluator.NewCalculator())
+	env := hme.New(nil)
+	newEnv := environment.New(hme.New)
+	if err := std.Autoload(env, newEnv); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+	eval := evaluator.New(evaluator.NewCalculator(), env, newEnv)
 	var collected []lexer.Token
 
 	for {
 		if isInteractive && len(collected) == 0 {
-			fmt.Print("go-lisp>>")
+			fmt.Print("glisp=>")
 		}
 
 		if !scanner.Scan() {
@@ -66,7 +75,11 @@ func main() {
 
 		if err := evalForms(eval, collected); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			collected = nil
+			if !isInteractive {
+				os.Exit(1)
+			}
+			continue
 		}
 		collected = nil
 	}

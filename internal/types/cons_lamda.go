@@ -46,7 +46,7 @@ func (c *Cons) String() string {
 
 		next, ok := cdr.(*Cons)
 		if !ok {
-			b.WriteByte(' ')
+			b.WriteString(" . ")
 			writeValue(&b, cdr)
 			b.WriteByte(')')
 			return b.String()

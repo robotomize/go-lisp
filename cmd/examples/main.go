@@ -2,11 +2,19 @@ package main
 
 import (
 	"fmt"
-	"robotomize/go-lisp/internal/types"
+	"time"
 )
 
+func fib(n int) int {
+	if n <= 1 {
+		return n
+	}
+
+	return fib(n-1) + fib(n-2)
+}
+
 func main() {
-	list := types.List(types.NewSymbol("ok"), types.NewInt(10), types.NewInt(20), types.NewSymbol("ok"), types.NewCons(types.NewSymbol("ok"), types.NewInt(30)))
-	fmt.Println(list.(*types.Cons).Car)
-	fmt.Println(list)
+	t := time.Now()
+	fib(40)
+	fmt.Println(time.Since(t))
 }

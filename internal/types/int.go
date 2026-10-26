@@ -93,7 +93,7 @@ func (n *Int) ToFloat() *Float {
 	return &Float{val: new(big.Float).SetInt(n.val)}
 }
 
-func (n *Int) Type() Typ {
+func (n *Int) Type() string {
 	return TypeInt
 }
 

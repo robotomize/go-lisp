@@ -27,17 +27,19 @@ const (
 const (
 	SfQuote SpecForm = iota
 	SfTypeof
-	SfCons
-	SfCar
-	SfCdr
 	SfIf
 	SfCond
 	SfPrint
 	SfRead
 	SfSymbol
 	SfDo
-	SfBegin
 	SfDefine
+	SfSet
+	SfEval
+	SfLambda
+	SfDambda
+	SfLet
+	SfDefineMacro
 )
 
 var ValuesToString = map[any]string{
@@ -55,19 +57,21 @@ var ValuesToString = map[any]string{
 	PrGte: ">=",
 	PrLte: "<=",
 
-	SfQuote:  "quote",
-	SfTypeof: "typeof",
-	SfCons:   "cons",
-	SfCar:    "car",
-	SfCdr:    "cdr",
-	SfIf:     "if",
-	SfCond:   "cond",
-	SfPrint:  "print",
-	SfRead:   "read",
-	SfSymbol: "symbol",
-	SfDo:     "do",
-	SfBegin:  "begin",
-	SfDefine: "define",
+	SfQuote:       "quote",
+	SfTypeof:      "typeof",
+	SfIf:          "if",
+	SfCond:        "cond",
+	SfPrint:       "print",
+	SfRead:        "read",
+	SfSymbol:      "symbol",
+	SfDo:          "do",
+	SfDefine:      "define",
+	SfSet:         "set!",
+	SfEval:        "eval",
+	SfLambda:      "lambda",
+	SfDambda:      "dambda",
+	SfLet:         "let",
+	SfDefineMacro: "define-macro",
 }
 
 var StringToValues = map[string]any{
@@ -94,19 +98,21 @@ var StringToValues = map[string]any{
 	"<=":  PrLte,
 	"lte": PrLte,
 
-	"quote":   SfQuote,
-	"typeof":  SfTypeof,
-	"type":    SfTypeof,
-	"cons":    SfCons,
-	"car":     SfCar,
-	"cdr":     SfCdr,
-	"if":      SfIf,
-	"cond":    SfCond,
-	"print":   SfPrint,
-	"display": SfPrint,
-	"read":    SfRead,
-	"symbol":  SfSymbol,
-	"do":      SfDo,
-	"begin":   SfBegin,
-	"define":  SfDefine,
+	"quote":        SfQuote,
+	"typeof":       SfTypeof,
+	"type":         SfTypeof,
+	"if":           SfIf,
+	"cond":         SfCond,
+	"print":        SfPrint,
+	"display":      SfPrint,
+	"read":         SfRead,
+	"symbol":       SfSymbol,
+	"do":           SfDo,
+	"define":       SfDefine,
+	"set!":         SfSet,
+	"eval":         SfEval,
+	"lambda":       SfLambda,
+	"dambda":       SfDambda,
+	"let":          SfLet,
+	"define-macro": SfDefineMacro,
 }
