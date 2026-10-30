@@ -2,8 +2,12 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+
+	"golang.org/x/term"
 
 	"robotomize/go-lisp/internal/ast"
 	"robotomize/go-lisp/internal/evaluator"
@@ -12,6 +16,8 @@ import (
 	"robotomize/go-lisp/internal/lexer"
 	"robotomize/go-lisp/internal/std"
 )
+
+const promptText = "go-lisp>>"
 
 func init() {
 
@@ -41,7 +47,13 @@ func main() {
 		isInteractive = false
 	}
 
-	scanner := bufio.NewScanner(input)
+	var lines lineReader
+	if isInteractive && term.IsTerminal(int(os.Stdin.Fd())) {
+		lines = &termReader{in: os.Stdin, out: os.Stdout}
+	} else {
+		lines = scannerReader{scanner: bufio.NewScanner(input), out: os.Stdout}
+	}
+
 	env := hme.New(nil)
 	newEnv := environment.New(hme.New)
 	if err := std.Autoload(env, newEnv); err != nil {
@@ -52,15 +64,25 @@ func main() {
 	var collected []lexer.Token
 
 	for {
+		prompt := ""
 		if isInteractive && len(collected) == 0 {
-			fmt.Print("glisp=>")
+			prompt = promptText
 		}
 
-		if !scanner.Scan() {
+		text, err := lines.next(prompt)
+		if errors.Is(err, errAbort) {
+			collected = nil
+			continue
+		}
+		if err == io.EOF {
 			break
 		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 
-		l := lexer.New(scanner.Text())
+		l := lexer.New(text)
 		for {
 			token, ok := l.Next()
 			if !ok {
@@ -89,10 +111,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
 }
 
 func evalForms(eval evaluator.Evaluator, tokens []lexer.Token) error {

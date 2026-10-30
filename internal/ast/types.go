@@ -1,28 +1,6 @@
 package ast
 
-type (
-	OpType   int
-	PredType int
-	SpecForm int
-)
-
-const (
-	OpAdd OpType = iota
-	OpSub
-	OpMul
-	OpDiv
-	OpMod
-	OpInc
-	OpDec
-)
-
-const (
-	PrEq PredType = iota
-	PrGt
-	PrLt
-	PrGte
-	PrLte
-)
+type SpecForm int
 
 const (
 	SfQuote SpecForm = iota
@@ -43,20 +21,6 @@ const (
 )
 
 var ValuesToString = map[any]string{
-	OpAdd: "+",
-	OpSub: "-",
-	OpMul: "*",
-	OpDiv: "/",
-	OpMod: "%",
-	OpInc: "++",
-	OpDec: "--",
-
-	PrEq:  "=",
-	PrGt:  ">",
-	PrLt:  "<",
-	PrGte: ">=",
-	PrLte: "<=",
-
 	SfQuote:       "quote",
 	SfTypeof:      "typeof",
 	SfIf:          "if",
@@ -75,29 +39,6 @@ var ValuesToString = map[any]string{
 }
 
 var StringToValues = map[string]any{
-	"+":   OpAdd,
-	"-":   OpSub,
-	"*":   OpMul,
-	"/":   OpDiv,
-	"%":   OpMod,
-	"mod": OpMod,
-	"++":  OpInc,
-	"inc": OpInc,
-	"dec": OpDec,
-	"--":  OpDec,
-
-	"=":   PrEq,
-	"eq":  PrEq,
-	"==":  PrEq,
-	">":   PrGt,
-	"gt":  PrGt,
-	"<":   PrLt,
-	"lt":  PrLt,
-	">=":  PrGte,
-	"gte": PrGte,
-	"<=":  PrLte,
-	"lte": PrLte,
-
 	"quote":        SfQuote,
 	"typeof":       SfTypeof,
 	"type":         SfTypeof,

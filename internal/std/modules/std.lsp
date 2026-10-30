@@ -85,6 +85,13 @@
       ()
       (cons (car xs) (take (- n 1) (cdr xs)))))
 
+(define (interleave a b)
+  (if (null? a) b
+  (if (null? b) a
+    (cons (car a)
+      (cons (car b) (interleave (cdr a) (cdr b)))))))
+
+
 (define (drop n xs)
   (if (or (<= n 0) (null? xs))
       xs

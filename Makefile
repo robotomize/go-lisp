@@ -1,4 +1,4 @@
-APP_NAME := glisp
+APP_NAME := go-lisp
 CMD := ./cmd/go-lisp-cli
 BIN_DIR := bin
 

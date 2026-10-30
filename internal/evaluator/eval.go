@@ -31,7 +31,7 @@ func NewWithIO(calculator Calculator, env environment.Context, newEnv environmen
 		out = os.Stdout
 	}
 
-	installPrimitives(env)
+	installPrimitives(env, calculator)
 
 	return &evalImpl{
 		calculator: calculator,
@@ -85,7 +85,7 @@ func (e *evalImpl) evalCons(cell *types.Cons) (Value, error) {
 	case ast.SfCond:
 		return e.evalCond(args)
 	case ast.SfQuote:
-		return oneArg(args)
+		return oneArg("quote", args)
 	case ast.SfPrint:
 		return e.evalPrint(args)
 	case ast.SfRead:
@@ -110,33 +110,6 @@ func (e *evalImpl) evalCons(cell *types.Cons) (Value, error) {
 		return e.evalLet(args)
 	case ast.SfDefineMacro:
 		return e.evalDefineMacro(args)
-	case ast.OpAdd, ast.OpSub, ast.OpMul, ast.OpDiv, ast.OpMod, ast.OpInc, ast.OpDec,
-		ast.PrEq, ast.PrGt, ast.PrLt, ast.PrGte, ast.PrLte:
-		nums, err := e.numbers(args)
-		if err != nil {
-			return nil, err
-		}
-
-		switch op {
-		case ast.OpAdd:
-			return cmpMultInstr(nums, types.NewInt(0), e.calculator.Add, true)
-		case ast.OpSub:
-			return cmpMultInstr(nums, types.NewInt(0), e.calculator.Sub, false)
-		case ast.OpMul:
-			return cmpMultInstr(nums, types.NewInt(1), e.calculator.Mul, true)
-		case ast.OpDiv:
-			return cmpMultInstr(nums, types.NewInt(1), e.calculator.Div, false)
-		case ast.OpMod:
-			return cmpPairInstr(nums, e.calculator.Mod)
-		case ast.OpInc:
-			return cmpSingleInstr(nums, e.calculator.Inc)
-		case ast.OpDec:
-			return cmpSingleInstr(nums, e.calculator.Dec)
-		case ast.PrEq, ast.PrGt, ast.PrLt, ast.PrGte, ast.PrLte:
-			return cmpPred(nums, e.calculator.Cmp, op)
-		default:
-			return nil, fmt.Errorf("operator is not implemented")
-		}
 	default:
 		return nil, fmt.Errorf("operator is not implemented: %s", head.Name())
 	}
@@ -148,13 +121,13 @@ func (e *evalImpl) evalDefine(args Value) (Value, error) {
 		return nil, err
 	}
 	if len(items) < 2 {
-		return nil, fmt.Errorf("expected 2 arguments")
+		return nil, arityError("define", "expected 2 arguments", items)
 	}
 
 	switch name := items[0].(type) {
 	case *types.Symbol:
 		if len(items) != 2 {
-			return nil, fmt.Errorf("expected 2 arguments")
+			return nil, arityError("define", "expected 2 arguments", items)
 		}
 		value, err := e.Eval(items[1])
 		if err != nil {
@@ -187,7 +160,7 @@ func (e *evalImpl) evalDefine(args Value) (Value, error) {
 }
 
 func (e *evalImpl) evalEval(args Value) (Value, error) {
-	value, err := e.evalOne(args)
+	value, err := e.evalOne("eval", args)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +174,7 @@ func (e *evalImpl) evalSet(args Value) (Value, error) {
 		return nil, err
 	}
 	if len(items) != 2 {
-		return nil, fmt.Errorf("expected 2 arguments")
+		return nil, arityError("set!", "expected 2 arguments", items)
 	}
 
 	symbol, ok := items[0].(*types.Symbol)
@@ -297,7 +270,7 @@ func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
 	}
 
 	if macro, ok := operator.(*types.Macro); ok {
-		return e.applyMacro(macro, cell.Cdr())
+		return e.applyMacro(callName(cell.Car()), macro, cell.Cdr())
 	}
 
 	args, err := e.evalOperands(cell.Cdr())
@@ -308,9 +281,9 @@ func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
 	switch fn := operator.(type) {
 	case *types.Lambda:
 		env, _ := fn.Env().(environment.Context)
-		return e.apply(fn.Params(), fn.Body(), env, args)
+		return e.apply(callName(cell.Car()), fn.Params(), fn.Body(), env, args)
 	case *types.Dambda:
-		return e.apply(fn.Params(), fn.Body(), e.env, args)
+		return e.apply(callName(cell.Car()), fn.Params(), fn.Body(), e.env, args)
 	case *types.Primitive:
 		return fn.Apply(args)
 	default:
@@ -318,7 +291,7 @@ func (e *evalImpl) evalCall(cell *types.Cons) (Value, error) {
 	}
 }
 
-func (e *evalImpl) applyMacro(macro *types.Macro, args Value) (Value, error) {
+func (e *evalImpl) applyMacro(name string, macro *types.Macro, args Value) (Value, error) {
 	items, err := operands(args)
 	if err != nil {
 		return nil, err
@@ -332,13 +305,14 @@ func (e *evalImpl) applyMacro(macro *types.Macro, args Value) (Value, error) {
 	params := macro.Params()
 	rest := macro.Rest()
 	if rest == "" && len(items) != len(params) || rest != "" && len(items) < len(params) {
+		what := fmt.Sprintf("expected %d arguments", len(params))
 		if len(params) == 1 && rest == "" {
-			return nil, fmt.Errorf("expected 1 argument")
+			what = "expected 1 argument"
 		}
-		if rest == "" {
-			return nil, fmt.Errorf("expected %d arguments", len(params))
+		if rest != "" {
+			what = fmt.Sprintf("expected at least %d arguments", len(params))
 		}
-		return nil, fmt.Errorf("expected at least %d arguments", len(params))
+		return nil, arityError(name, what, items)
 	}
 
 	frame := e.newEnv(env)
@@ -401,7 +375,7 @@ func (e *evalImpl) evalLet(args Value) (Value, error) {
 		}
 	}
 
-	return e.apply(params, valueList(items[1:]), e.env, values)
+	return e.apply("let", params, valueList(items[1:]), e.env, values)
 }
 
 func (e *evalImpl) evalDefineMacro(args Value) (Value, error) {
@@ -484,12 +458,13 @@ func macroParams(args Value) ([]string, string, error) {
 	}
 }
 
-func (e *evalImpl) apply(params []string, body Value, parent environment.Context, args []Value) (Value, error) {
+func (e *evalImpl) apply(name string, params []string, body Value, parent environment.Context, args []Value) (Value, error) {
 	if len(args) != len(params) {
+		what := fmt.Sprintf("expected %d arguments", len(params))
 		if len(params) == 1 {
-			return nil, fmt.Errorf("expected 1 argument")
+			what = "expected 1 argument"
 		}
-		return nil, fmt.Errorf("expected %d arguments", len(params))
+		return nil, arityError(name, what, args)
 	}
 
 	frame := e.newEnv(parent)
@@ -695,7 +670,7 @@ func (e *evalImpl) evalIf(args Value) (Value, error) {
 	}
 
 	if len(items) < 2 || len(items) > 3 {
-		return nil, fmt.Errorf("expected 2 or 3 arguments")
+		return nil, arityError("if", "expected 2 or 3 arguments", items)
 	}
 
 	test, err := e.Eval(items[0])
@@ -744,14 +719,14 @@ func (e *evalImpl) evalRead(args Value) (Value, error) {
 	}
 
 	if len(items) != 0 {
-		return nil, fmt.Errorf("expected 0 arguments")
+		return nil, arityError("read", "expected 0 arguments", items)
 	}
 
 	return readForm(e.in)
 }
 
 func (e *evalImpl) evalSymbol(args Value) (Value, error) {
-	value, err := e.evalOne(args)
+	value, err := e.evalOne("symbol", args)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +742,7 @@ func (e *evalImpl) evalSymbol(args Value) (Value, error) {
 }
 
 func (e *evalImpl) evalTypeof(args Value) (Value, error) {
-	value, err := e.evalOne(args)
+	value, err := e.evalOne("typeof", args)
 	if err != nil {
 		return nil, err
 	}
@@ -775,8 +750,8 @@ func (e *evalImpl) evalTypeof(args Value) (Value, error) {
 	return types.NewSymbol(value.Type()), nil
 }
 
-func (e *evalImpl) evalOne(args Value) (Value, error) {
-	expr, err := oneArg(args)
+func (e *evalImpl) evalOne(name string, args Value) (Value, error) {
+	expr, err := oneArg(name, args)
 	if err != nil {
 		return nil, err
 	}
@@ -801,17 +776,49 @@ func (e *evalImpl) evalSeq(args Value) (Value, error) {
 	return last, nil
 }
 
-func oneArg(args Value) (Value, error) {
+func oneArg(name string, args Value) (Value, error) {
 	items, err := operands(args)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(items) != 1 {
-		return nil, fmt.Errorf("expected 1 argument")
+		return nil, arityError(name, "expected 1 argument", items)
 	}
 
 	return items[0], nil
+}
+
+func callName(head Value) string {
+	symbol, ok := head.(*types.Symbol)
+	if ok {
+		return symbol.Name()
+	}
+	if head == nil {
+		return "<nil>"
+	}
+	return head.String()
+}
+
+func arityError(name, what string, args []Value) error {
+	shown := make([]string, 0, len(args)+1)
+	shown = append(shown, name)
+	for _, arg := range args {
+		if arg == nil {
+			shown = append(shown, "<nil>")
+			continue
+		}
+		shown = append(shown, arg.String())
+	}
+	return fmt.Errorf("%s: %s, got %d: (%s)", name, what, len(args), strings.Join(shown, " "))
+}
+
+func numericArgs(nums []types.Numeric) []Value {
+	args := make([]Value, len(nums))
+	for i, number := range nums {
+		args[i] = number
+	}
+	return args
 }
 
 func operands(args Value) ([]Value, error) {
@@ -834,34 +841,10 @@ func isFalse(value Value) bool {
 	return ok && !boolean.V()
 }
 
-func (e *evalImpl) numbers(args Value) ([]types.Numeric, error) {
-	items, err := operands(args)
-	if err != nil {
-		return nil, err
-	}
-
-	nums := make([]types.Numeric, 0, len(items))
-	for _, expr := range items {
-		value, err := e.Eval(expr)
-		if err != nil {
-			return nil, err
-		}
-
-		number, ok := value.(types.Numeric)
-		if !ok {
-			return nil, fmt.Errorf("%s is not a number", value)
-		}
-
-		nums = append(nums, number)
-	}
-
-	return nums, nil
-}
-
-func cmpMultInstr(nums []types.Numeric, identity types.Numeric, op EvalOpFunc, allowEmpty bool) (Value, error) {
+func cmpMultInstr(name string, nums []types.Numeric, identity types.Numeric, op EvalOpFunc, allowEmpty bool) (Value, error) {
 	if len(nums) == 0 {
 		if !allowEmpty {
-			return nil, fmt.Errorf("expected at least 1 argument")
+			return nil, arityError(name, "expected at least 1 argument", nil)
 		}
 
 		return identity, nil
@@ -886,28 +869,13 @@ func cmpMultInstr(nums []types.Numeric, identity types.Numeric, op EvalOpFunc, a
 	return acc, nil
 }
 
-func cmpPred(nums []types.Numeric, cmp func(a, b types.Numeric) int, op any) (Value, error) {
+func cmpPred(name string, nums []types.Numeric, cmp func(a, b types.Numeric) int, pass func(int) bool) (Value, error) {
 	if len(nums) < 2 {
-		return nil, fmt.Errorf("expected at least 2 arguments")
+		return nil, arityError(name, "expected at least 2 arguments", numericArgs(nums))
 	}
 
 	for i := 1; i < len(nums); i++ {
-		order := cmp(nums[i-1], nums[i])
-		pass := false
-		switch op {
-		case ast.PrEq:
-			pass = order == 0
-		case ast.PrLt:
-			pass = order < 0
-		case ast.PrGt:
-			pass = order > 0
-		case ast.PrLte:
-			pass = order <= 0
-		case ast.PrGte:
-			pass = order >= 0
-		}
-
-		if !pass {
+		if !pass(cmp(nums[i-1], nums[i])) {
 			return types.False, nil
 		}
 	}
@@ -915,17 +883,17 @@ func cmpPred(nums []types.Numeric, cmp func(a, b types.Numeric) int, op any) (Va
 	return types.True, nil
 }
 
-func cmpPairInstr(nums []types.Numeric, op EvalOpFunc) (Value, error) {
+func cmpPairInstr(name string, nums []types.Numeric, op EvalOpFunc) (Value, error) {
 	if len(nums) != 2 {
-		return nil, fmt.Errorf("expected 2 arguments")
+		return nil, arityError(name, "expected 2 arguments", numericArgs(nums))
 	}
 
 	return op(nums[0], nums[1])
 }
 
-func cmpSingleInstr(nums []types.Numeric, op func(types.Numeric) (types.Numeric, error)) (Value, error) {
+func cmpSingleInstr(name string, nums []types.Numeric, op func(types.Numeric) (types.Numeric, error)) (Value, error) {
 	if len(nums) != 1 {
-		return nil, fmt.Errorf("expected 1 argument")
+		return nil, arityError(name, "expected 1 argument", numericArgs(nums))
 	}
 
 	return op(nums[0])
